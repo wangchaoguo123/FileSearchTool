@@ -1,5 +1,26 @@
 """
-用于生成可执行文件
+FileSearchTool 打包脚本
+
+用于将 Python 程序打包为独立可执行文件（.exe）
+
+使用方法：
+    1. 创建虚拟环境（推荐）：
+        python -m venv .venv
+    
+    2. 激活虚拟环境：
+        Windows (CMD):     .venv\Scripts\activate.bat
+        Windows (PowerShell): .venv\Scripts\Activate.ps1
+        macOS/Linux:       source .venv/bin/activate
+    
+    3. 安装依赖：
+        pip install pyinstaller pillow pyqt5
+    
+    4. 运行打包脚本：
+        python setup.py
+
+打包输出：
+    - 单文件模式：dist/FileSearchTool.exe
+    - 目录模式：   dist/FileSearchTool/FileSearchTool.exe
 """
 
 import os
@@ -7,21 +28,7 @@ import sys
 import shutil
 import subprocess
 
-'''
-程序项目创建独立的虚拟环境
-1.创建虚拟环境（命名为 .venv）
-    python -m venv .venv
-2.激活虚拟环境（不同系统命令不同）
-    Windows (CMD)	.venv\Scripts\activate.bat
-    Windows (PowerShell)	.venv\Scripts\Activate.ps1（需先执行：Set-ExecutionPolicy RemoteSigned）
-    macOS/Linux (bash/zsh)	source .venv/bin/activate
-3.退出虚拟环境
-    deactivate
-
-python.exe -m pip install --upgrade pip
-'''
-
-# 获取项目根目录
+# 获取项目根目录（脚本所在目录）
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # 检查是否安装了PyInstaller
@@ -31,42 +38,66 @@ except ImportError:
     print("需要安装PyInstaller: pip install pyinstaller")
     sys.exit(1)
 
-# 配置项（可根据实际需求修改）
-MAIN_SCRIPT = os.path.join(PROJECT_ROOT, "main.py")  # 要打包的主脚本
-OUT_FILE_NAME = "FileSearchTool"  # 使用英文名称避免编码问题
+# ==================== 打包配置项 ====================
+# 可根据实际需求修改以下配置
+
+# 主脚本路径：要打包的Python主程序
+MAIN_SCRIPT = os.path.join(PROJECT_ROOT, "main.py")
+
+# 输出文件名：生成的可执行文件名称（英文，避免编码问题）
+OUT_FILE_NAME = "FileSearchTool"
+
+# 是否设置图标：1=启用，0=禁用
 SET_ICON_FLG = 1
+
+# 图标路径：应用图标文件路径（仅支持.ico格式）
 ICON_PATH = os.path.join(PROJECT_ROOT, "img", "tb.ico")
+
+# 输出目录：打包输出根目录
 DIST_DIR = os.path.join(PROJECT_ROOT, "dist")
+
+# 构建目录：临时构建文件目录
 BUILD_DIR = os.path.join(PROJECT_ROOT, "build")
-# 打包模式: True=单文件模式(--onefile), False=目录模式(--onedir)
+
+# 打包模式：True=单文件模式(--onefile)，False=目录模式(--onedir)
 ONE_FILE_MODE = True
 
-# 需要通过 PyInstaller --add-data 参数打包的资源文件
+# 需要打包的资源文件（通过PyInstaller --add-data参数）
+# 格式：(源路径, 目标相对路径)
 PYINSTALLER_DATAS = [
-    # 格式: (源路径, 目标相对路径)
-    (os.path.join(PROJECT_ROOT, "img"), "img"),  # img 文件夹
+    (os.path.join(PROJECT_ROOT, "img"), "img"),  # img文件夹
 ]
 
-# 需要复制到 dist 目录的非代码文件和文件夹配置
+# 需要复制到dist目录的非代码文件
+# 格式：(源路径, 目标相对路径)
+# 目标相对路径为None或""表示复制到dist根目录
 RESOURCE_FILES = [
-    # 格式: (源路径, 目标相对路径)
-    # 目标相对路径为 None 或 "" 表示复制到 dist 根目录
     (os.path.join(PROJECT_ROOT, "README.md"), ""),  # 说明文档
+    (os.path.join(PROJECT_ROOT, "CHANGELOG.md"), ""),  # 更新日志
 ]
-# 是否启用资源文件复制功能
+
+# 是否启用资源文件复制功能：1=启用，0=禁用
 COPY_RESOURCES_FLG = 1
 
+
 def check_icon():
-    """检查图标文件是否有效"""
-    if not os.path.exists(ICON_PATH):
-        print(f"错误：图标文件 {ICON_PATH} 不存在！")
-        sys.exit(1)
+    """检查图标文件是否存在且格式正确"""
+    global SET_ICON_FLG
+    
+    # 如果图标文件不存在，禁用图标设置
+    if not ICON_PATH or not os.path.exists(ICON_PATH):
+        if SET_ICON_FLG:
+            print("警告：图标文件不存在，将使用默认图标")
+        SET_ICON_FLG = 0
+        return
+    
     if not ICON_PATH.endswith(".ico"):
-        print("错误：图标文件必须是.ico格式！")
-        sys.exit(1)
+        print("警告：图标文件必须是.ico格式，将使用默认图标")
+        SET_ICON_FLG = 0
+
 
 def copy_resources():
-    """复制非代码文件和文件夹到 dist 目录"""
+    """复制非代码资源到dist目录"""
     if not COPY_RESOURCES_FLG:
         print("资源文件复制功能已禁用，跳过")
         return
@@ -105,59 +136,84 @@ def copy_resources():
     
     print(f"资源文件复制完成，共复制 {copied_count} 项")
 
+
 def build_executable():
     """构建可执行文件"""
-    # 0. 检查前置条件
+    # 检查图标
     if SET_ICON_FLG:
         check_icon()
 
-    # 1. 检查主脚本是否存在
+    # 检查主脚本
     if not os.path.exists(MAIN_SCRIPT):
         print(f"错误：主脚本文件 {MAIN_SCRIPT} 不存在！")
         sys.exit(1)
     
-    # 2. 清理之前的构建文件
+    # 清理旧目录
     for dir_name in [BUILD_DIR, DIST_DIR]:
         if os.path.exists(dir_name):
             shutil.rmtree(dir_name)
             print(f"已清理旧目录: {dir_name}")
     
-    # 3. 构建PyInstaller命令
+    # 构建PyInstaller命令
     pyinstaller_cmd = [
         "pyinstaller",
-        "--windowed",         # 无控制台窗口（GUI程序适用）
-        "--clean",            # 清理临时文件
-        "--noconfirm",        # 覆盖输出目录不询问
-        f"--name={OUT_FILE_NAME}",  # 可执行文件名称
+        "--windowed",
+        "--clean",
+        "--noconfirm",
+        f"--name={OUT_FILE_NAME}",
     ]
     
-    # 选择打包模式
+    # 打包模式
     if ONE_FILE_MODE:
         pyinstaller_cmd.append("--onefile")
     else:
         pyinstaller_cmd.append("--onedir")
     
-    # 添加图标（如果启用）
+    # 添加图标
     if SET_ICON_FLG:
         pyinstaller_cmd.append(f"--icon={ICON_PATH}")
     
-    # 添加 --add-data 参数来打包资源文件
+    # 添加资源文件
     for src_path, dest_rel_path in PYINSTALLER_DATAS:
         if os.path.exists(src_path):
-            # Windows 使用 ; 分隔，Linux/macOS 使用 :
             sep = ";" if os.name == "nt" else ":"
             pyinstaller_cmd.append(f"--add-data={src_path}{sep}{dest_rel_path}")
     
-    # 添加主脚本
     pyinstaller_cmd.append(MAIN_SCRIPT)
     
-    # 4. 执行打包命令并检查结果
+    # 执行打包
     try:
+        # 使用 Python 模块方式调用，避免路径编码问题
+        pyinstaller_cmd = [
+            sys.executable, "-m", "PyInstaller",
+            "--windowed",
+            "--clean",
+            "--noconfirm",
+            f"--name={OUT_FILE_NAME}",
+        ]
+        
+        # 打包模式
+        if ONE_FILE_MODE:
+            pyinstaller_cmd.append("--onefile")
+        else:
+            pyinstaller_cmd.append("--onedir")
+        
+        # 添加图标
+        if SET_ICON_FLG:
+            pyinstaller_cmd.append(f"--icon={ICON_PATH}")
+        
+        # 添加资源文件
+        for src_path, dest_rel_path in PYINSTALLER_DATAS:
+            if os.path.exists(src_path):
+                sep = ";" if os.name == "nt" else ":"
+                pyinstaller_cmd.append(f"--add-data={src_path}{sep}{dest_rel_path}")
+        
+        pyinstaller_cmd.append(MAIN_SCRIPT)
+        
         print(f"开始执行打包命令: {' '.join(pyinstaller_cmd)}")
         print("-" * 60)
         
-        # 不捕获输出，直接显示到控制台
-        result = subprocess.run(
+        subprocess.run(
             pyinstaller_cmd,
             check=True,
             cwd=PROJECT_ROOT
@@ -173,15 +229,15 @@ def build_executable():
         print("3. 检查是否有语法错误")
         sys.exit(1)
     
-    # 5. 检查dist目录是否存在
+    # 检查输出目录
     if not os.path.exists(DIST_DIR):
         print("构建失败，未生成dist目录")
         sys.exit(1)
     
-    # 6. 复制资源文件到 dist 目录
+    # 复制资源文件
     copy_resources()
     
-    # 7. 查找生成的可执行文件
+    # 查找可执行文件
     exe_files = []
     for file in os.listdir(DIST_DIR):
         if file.endswith('.exe') or (not file.endswith('.py') and os.access(os.path.join(DIST_DIR, file), os.X_OK)):
@@ -195,7 +251,9 @@ def build_executable():
     else:
         print(f"\n构建完成，但未找到可执行文件在 {DIST_DIR} 目录")
 
+
 if __name__ == "__main__":
+    """程序入口"""
     try:
         build_executable()
     except KeyboardInterrupt:
